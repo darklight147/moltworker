@@ -53,6 +53,8 @@ EOF
 
 RCLONE_FLAGS="--transfers=16 --fast-list --s3-no-check-bucket"
 
+npm install -g openclaw@2026.2.3 && openclaw --version
+
 # ============================================================
 # RESTORE FROM R2
 # ============================================================
