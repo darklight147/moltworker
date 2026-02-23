@@ -50,6 +50,8 @@ interface CDPSession {
   browser: Browser;
   pages: Map<string, Page>; // targetId -> Page
   defaultTargetId: string;
+  autoAttach: boolean;
+  flattenAutoAttach: boolean;
   nodeIdCounter: number;
   nodeMap: Map<number, string>; // nodeId -> selector path
   objectIdCounter: number;
@@ -431,6 +433,8 @@ function startCDPSession(ws: WebSocket, env: MoltbotEnv): void {
             browser,
             pages: new Map([[targetId, page]]),
             defaultTargetId: targetId,
+            autoAttach: false,
+            flattenAutoAttach: false,
             nodeIdCounter: 1,
             nodeMap: new Map(),
             objectIdCounter: 1,
@@ -581,6 +585,10 @@ async function handleBrowser(
       await session.browser.close();
       return {};
 
+    case 'setDownloadBehavior':
+      // No-op for Cloudflare Browser Rendering; downloads are not persisted to disk.
+      return {};
+
     default:
       throw new Error(`Unknown Browser method: ${command}`);
   }
@@ -654,6 +662,31 @@ async function handleTarget(
     case 'attachToTarget':
       // Already attached
       return { sessionId: params.targetId };
+
+    case 'setAutoAttach': {
+      session.autoAttach = Boolean(params.autoAttach);
+      session.flattenAutoAttach = Boolean(params.flatten);
+
+      if (session.autoAttach) {
+        // Emit attached events for existing targets for Playwright compatibility.
+        for (const [targetId] of session.pages) {
+          const sessionId = session.flattenAutoAttach ? targetId : crypto.randomUUID();
+          sendEvent(ws, 'Target.attachedToTarget', {
+            sessionId,
+            targetInfo: {
+              targetId,
+              type: 'page',
+              title: '',
+              url: 'about:blank',
+              attached: true,
+            },
+            waitingForDebugger: false,
+          });
+        }
+      }
+
+      return {};
+    }
 
     default:
       throw new Error(`Unknown Target method: ${command}`);
