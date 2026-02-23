@@ -30,12 +30,14 @@ interface CDPRequest {
   id: number;
   method: string;
   params?: Record<string, unknown>;
+  sessionId?: string;
 }
 
 interface CDPResponse {
   id: number;
   result?: unknown;
   error?: { code: number; message: string };
+  sessionId?: string;
 }
 
 interface CDPEvent {
@@ -50,6 +52,9 @@ interface CDPSession {
   browser: Browser;
   pages: Map<string, Page>; // targetId -> Page
   defaultTargetId: string;
+  browserContextId: string;
+  targetSessionIds: Map<string, string>; // targetId -> sessionId
+  sessionTargetIds: Map<string, string>; // sessionId -> targetId
   autoAttach: boolean;
   flattenAutoAttach: boolean;
   nodeIdCounter: number;
@@ -433,6 +438,9 @@ function startCDPSession(ws: WebSocket, env: MoltbotEnv): void {
             browser,
             pages: new Map([[targetId, page]]),
             defaultTargetId: targetId,
+            browserContextId: 'default',
+            targetSessionIds: new Map(),
+            sessionTargetIds: new Map(),
             autoAttach: false,
             flattenAutoAttach: false,
             nodeIdCounter: 1,
@@ -451,6 +459,7 @@ function startCDPSession(ws: WebSocket, env: MoltbotEnv): void {
               type: 'page',
               title: '',
               url: 'about:blank',
+              browserContextId: session.browserContextId,
               attached: true,
             },
           });
@@ -484,11 +493,23 @@ function startCDPSession(ws: WebSocket, env: MoltbotEnv): void {
       if (!session) {
         throw new Error('CDP session not initialized');
       }
-      const result = await handleCDPMethod(session, request.method, request.params || {}, ws);
-      sendResponse(ws, request.id, result);
+      const result = await handleCDPMethod(
+        session,
+        request.method,
+        request.params || {},
+        ws,
+        request.sessionId,
+      );
+      sendResponse(ws, request.id, result, request.sessionId);
     } catch (err) {
       console.error('[CDP] Method error:', request.method, err);
-      sendError(ws, request.id, -32000, err instanceof Error ? err.message : 'Unknown error');
+      sendError(
+        ws,
+        request.id,
+        -32000,
+        err instanceof Error ? err.message : 'Unknown error',
+        request.sessionId,
+      );
     }
   });
 
@@ -517,11 +538,15 @@ async function handleCDPMethod(
   method: string,
   params: Record<string, unknown>,
   ws: WebSocket,
+  requestSessionId?: string,
 ): Promise<unknown> {
   const [domain, command] = method.split('.');
 
-  // Get the current page (use targetId from params or default)
-  const targetId = (params.targetId as string) || session.defaultTargetId;
+  // Get the current page from sessionId (flatten mode), targetId param, or default target
+  const targetIdFromSession = requestSessionId
+    ? session.sessionTargetIds.get(requestSessionId)
+    : undefined;
+  const targetId = targetIdFromSession || (params.targetId as string) || session.defaultTargetId;
   const page = session.pages.get(targetId);
 
   switch (domain) {
@@ -621,9 +646,28 @@ async function handleTarget(
           type: 'page',
           title: await page.title(),
           url: page.url(),
+          browserContextId: session.browserContextId,
           attached: true,
         },
       });
+
+      if (session.autoAttach) {
+        const sessionId = session.flattenAutoAttach ? targetId : crypto.randomUUID();
+        session.targetSessionIds.set(targetId, sessionId);
+        session.sessionTargetIds.set(sessionId, targetId);
+        sendEvent(ws, 'Target.attachedToTarget', {
+          sessionId,
+          targetInfo: {
+            targetId,
+            type: 'page',
+            title: await page.title(),
+            url: page.url(),
+            browserContextId: session.browserContextId,
+            attached: true,
+          },
+          waitingForDebugger: false,
+        });
+      }
 
       return { targetId };
     }
@@ -653,15 +697,26 @@ async function handleTarget(
           // eslint-disable-next-line no-await-in-loop -- sequential page info retrieval
           title: await page.title(),
           url: page.url(),
+          browserContextId: session.browserContextId,
           attached: true,
         });
       }
       return { targetInfos: targets };
     }
 
-    case 'attachToTarget':
-      // Already attached
-      return { sessionId: params.targetId };
+    case 'attachToTarget': {
+      const targetId = params.targetId as string;
+      if (!targetId || !session.pages.has(targetId)) {
+        throw new Error(`Target not found: ${targetId}`);
+      }
+      let sessionId = session.targetSessionIds.get(targetId);
+      if (!sessionId) {
+        sessionId = crypto.randomUUID();
+        session.targetSessionIds.set(targetId, sessionId);
+        session.sessionTargetIds.set(sessionId, targetId);
+      }
+      return { sessionId };
+    }
 
     case 'setAutoAttach': {
       session.autoAttach = Boolean(params.autoAttach);
@@ -670,7 +725,11 @@ async function handleTarget(
       if (session.autoAttach) {
         // Emit attached events for existing targets for Playwright compatibility.
         for (const [targetId] of session.pages) {
-          const sessionId = session.flattenAutoAttach ? targetId : crypto.randomUUID();
+          const sessionId = session.flattenAutoAttach
+            ? targetId
+            : session.targetSessionIds.get(targetId) || crypto.randomUUID();
+          session.targetSessionIds.set(targetId, sessionId);
+          session.sessionTargetIds.set(sessionId, targetId);
           sendEvent(ws, 'Target.attachedToTarget', {
             sessionId,
             targetInfo: {
@@ -678,6 +737,7 @@ async function handleTarget(
               type: 'page',
               title: '',
               url: 'about:blank',
+              browserContextId: session.browserContextId,
               attached: true,
             },
             waitingForDebugger: false,
@@ -1974,16 +2034,22 @@ async function handleFetch(
 /**
  * Send a CDP response
  */
-function sendResponse(ws: WebSocket, id: number, result: unknown): void {
-  const response: CDPResponse = { id, result };
+function sendResponse(ws: WebSocket, id: number, result: unknown, sessionId?: string): void {
+  const response: CDPResponse = { id, result, sessionId };
   ws.send(JSON.stringify(response));
 }
 
 /**
  * Send a CDP error
  */
-function sendError(ws: WebSocket, id: number, code: number, message: string): void {
-  const response: CDPResponse = { id, error: { code, message } };
+function sendError(
+  ws: WebSocket,
+  id: number,
+  code: number,
+  message: string,
+  sessionId?: string,
+): void {
+  const response: CDPResponse = { id, error: { code, message }, sessionId };
   ws.send(JSON.stringify(response));
 }
 
