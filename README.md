@@ -306,6 +306,10 @@ npx wrangler secret put WORKER_URL
 # Enter: https://your-worker.workers.dev
 ```
 
+At startup, `start-openclaw.sh` automatically writes a `cloudflare` browser profile to
+`/root/.openclaw/openclaw.json` using:
+- `browser.profiles.cloudflare.cdpUrl = https://<WORKER_URL>/cdp?secret=<CDP_SECRET>`
+
 3. Redeploy:
 
 ```bash
@@ -316,10 +320,11 @@ npm run deploy
 
 | Endpoint | Description |
 |----------|-------------|
+| `GET /cdp` | CDP route info + supported methods |
 | `GET /cdp/json/version` | Browser version information |
 | `GET /cdp/json/list` | List available browser targets |
-| `GET /cdp/json/new` | Create a new browser target |
-| `WS /cdp/devtools/browser/{id}` | WebSocket connection for CDP commands |
+| `GET /cdp/json` | Alias for `/cdp/json/list` |
+| `WS /cdp?secret=<CDP_SECRET>` | WebSocket connection for CDP commands |
 
 All endpoints require authentication via the `?secret=<CDP_SECRET>` query parameter.
 
@@ -466,6 +471,8 @@ OpenClaw in Cloudflare Sandbox uses multiple authentication layers:
 **Access denied on admin routes:** Ensure `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and that your Cloudflare Access application is configured correctly.
 
 **Devices not appearing in admin UI:** Device list commands take 10-15 seconds due to WebSocket connection overhead. Wait and refresh.
+
+**CDP/browser skill returns `Unauthorized` or HTML login page:** Ensure your Cloudflare Access policy does not protect `/cdp/*` at the edge. The worker handles `/cdp/*` auth via `CDP_SECRET`, not CF Access JWT.
 
 **WebSocket issues in local development:** `wrangler dev` has known limitations with WebSocket proxying through the sandbox. HTTP requests work but WebSocket connections may fail. Deploy to Cloudflare for full functionality.
 

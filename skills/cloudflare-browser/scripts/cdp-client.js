@@ -21,7 +21,12 @@ function createClient(options = {}) {
     throw new Error('CDP_SECRET environment variable not set');
   }
   
-  const workerUrl = (options.workerUrl || process.env.WORKER_URL).replace(/^https?:\/\//, '');
+  const workerUrlRaw = options.workerUrl || process.env.WORKER_URL;
+  if (!workerUrlRaw) {
+    throw new Error('WORKER_URL environment variable not set');
+  }
+
+  const workerUrl = workerUrlRaw.replace(/^https?:\/\//, '');
   const wsUrl = `wss://${workerUrl}/cdp?secret=${encodeURIComponent(CDP_SECRET)}`;
   const timeout = options.timeout || 60000;
   

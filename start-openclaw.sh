@@ -133,7 +133,7 @@ else
 fi
 
 # ============================================================
-# PATCH CONFIG (channels, gateway auth, trusted proxies)
+# PATCH CONFIG (channels, gateway auth, trusted proxies, browser profile)
 # ============================================================
 # openclaw onboard handles provider/model config, but we need to patch in:
 # - Channel config (Telegram, Discord, Slack)
@@ -175,6 +175,30 @@ if (process.env.OPENCLAW_DEV_MODE === 'true') {
 // ANTHROPIC_BASE_URL is picked up natively by the Anthropic SDK,
 // so we don't need to patch the provider config. Writing a provider
 // entry without a models array breaks OpenClaw's config validation.
+
+// Browser profile for Cloudflare Browser Rendering CDP shim.
+// This enables skills/tools to reference "cloudflare" without manual config edits.
+if (process.env.WORKER_URL && process.env.CDP_SECRET) {
+    try {
+        const workerUrl = new URL(process.env.WORKER_URL);
+        workerUrl.pathname = '/cdp';
+        workerUrl.search = '';
+        workerUrl.searchParams.set('secret', process.env.CDP_SECRET);
+
+        config.browser = config.browser || {};
+        config.browser.profiles = config.browser.profiles || {};
+        config.browser.profiles.cloudflare = {
+            ...(config.browser.profiles.cloudflare || {}),
+            cdpUrl: workerUrl.toString(),
+        };
+
+        console.log('Browser profile configured: cloudflare');
+    } catch (e) {
+        console.warn('Skipping browser profile config: invalid WORKER_URL');
+    }
+} else if (process.env.WORKER_URL || process.env.CDP_SECRET) {
+    console.warn('Skipping browser profile config: both WORKER_URL and CDP_SECRET are required');
+}
 
 // AI Gateway model override (CF_AI_GATEWAY_MODEL=provider/model-id)
 // Adds a provider entry for any AI Gateway provider and sets it as default model.
