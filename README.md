@@ -403,6 +403,8 @@ This works with any [AI Gateway provider](https://developers.cloudflare.com/ai-g
 | Anthropic | `anthropic/claude-sonnet-4-5` | Anthropic API key |
 | Groq | `groq/llama-3.3-70b` | Groq API key |
 
+Implementation note: non-Anthropic `CF_AI_GATEWAY_MODEL` values (including `workers-ai/*`) are routed through AI Gateway's OpenAI-compatible `compat` endpoint so request/response structure stays consistent for chat clients.
+
 **Note:** `CLOUDFLARE_AI_GATEWAY_API_KEY` must match the provider you're using — it's your provider's API key, forwarded through the gateway. You can only use one provider at a time through the gateway. For multiple providers, use direct keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) alongside the gateway config.
 
 #### Workers AI with Unified Billing
