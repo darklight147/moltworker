@@ -308,7 +308,7 @@ npx wrangler secret put WORKER_URL
 
 At startup, `start-openclaw.sh` automatically writes a `cloudflare` browser profile to
 `/root/.openclaw/openclaw.json` using:
-- `browser.profiles.cloudflare.cdpUrl = https://<WORKER_URL>/cdp?secret=<CDP_SECRET>`
+- `browser.profiles.cloudflare.cdpUrl = https://<WORKER_URL>/cdp/?secret=<CDP_SECRET>`
 - `browser.defaultProfile = cloudflare` (so tool calls like "take a screenshot" use CDP by default)
 - `browser.enabled = true`
 

@@ -181,7 +181,9 @@ if (process.env.OPENCLAW_DEV_MODE === 'true') {
 if (process.env.WORKER_URL && process.env.CDP_SECRET) {
     try {
         const workerUrl = new URL(process.env.WORKER_URL);
-        workerUrl.pathname = '/cdp';
+        // Keep trailing slash so clients resolving relative discovery paths
+        // (e.g. ./json/version) stay under /cdp/.
+        workerUrl.pathname = '/cdp/';
         workerUrl.search = '';
         workerUrl.searchParams.set('secret', process.env.CDP_SECRET);
 
