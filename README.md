@@ -314,6 +314,7 @@ At startup, `start-openclaw.sh` automatically writes a `cloudflare` browser prof
 - `browser.profiles.cloudflare.cdpUrl = https://<WORKER_URL>/cdp/?secret=<CDP_SECRET>`
 - `browser.defaultProfile = cloudflare` (so tool calls like "take a screenshot" use CDP by default)
 - `browser.enabled = true`
+- `nodeHost.browserProxy.enabled = true` with `allowProfiles` including `cloudflare`
 
 3. Redeploy:
 

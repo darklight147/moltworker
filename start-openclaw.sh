@@ -199,6 +199,18 @@ if (process.env.WORKER_URL && process.env.CDP_SECRET) {
             cdpUrl: workerUrl.toString(),
         };
 
+        // Ensure browser tool requests are routed through the configured remote profile
+        // instead of attempting local Chrome/Chromium discovery.
+        config.nodeHost = config.nodeHost || {};
+        config.nodeHost.browserProxy = config.nodeHost.browserProxy || {};
+        config.nodeHost.browserProxy.enabled = true;
+        const existingAllowProfiles = Array.isArray(config.nodeHost.browserProxy.allowProfiles)
+            ? config.nodeHost.browserProxy.allowProfiles
+            : [];
+        config.nodeHost.browserProxy.allowProfiles = Array.from(
+            new Set([...existingAllowProfiles, 'cloudflare']),
+        );
+
         console.log('Browser profile configured: cloudflare');
     } catch (e) {
         console.warn('Skipping browser profile config: invalid WORKER_URL');
