@@ -268,6 +268,9 @@ Debug endpoints are available at `/debug/*` when enabled (requires `DEBUG_ROUTES
 
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN
+# Optional but recommended if you want your DM allow list to persist across restarts/deploys
+npx wrangler secret put TELEGRAM_DM_ALLOW_FROM
+# Enter: 123456789 (or comma-separated IDs like 123456789,987654321)
 npm run deploy
 ```
 
@@ -441,6 +444,7 @@ The previous `AI_GATEWAY_API_KEY` + `AI_GATEWAY_BASE_URL` approach is still supp
 | `CF_ACCOUNT_ID` | No | Cloudflare account ID (required for R2 storage) |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram bot token |
 | `TELEGRAM_DM_POLICY` | No | Telegram DM policy: `pairing` (default) or `open` |
+| `TELEGRAM_DM_ALLOW_FROM` | No | Comma-separated Telegram user IDs allowed for DMs (e.g. `123456789,987654321`) |
 | `DISCORD_BOT_TOKEN` | No | Discord bot token |
 | `DISCORD_DM_POLICY` | No | Discord DM policy: `pairing` (default) or `open` |
 | `SLACK_BOT_TOKEN` | No | Slack bot token |
@@ -475,6 +479,8 @@ OpenClaw in Cloudflare Sandbox uses multiple authentication layers:
 **Access denied on admin routes:** Ensure `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` are set, and that your Cloudflare Access application is configured correctly.
 
 **Devices not appearing in admin UI:** Device list commands take 10-15 seconds due to WebSocket connection overhead. Wait and refresh.
+
+**Telegram allow list resets after deploy/restart:** Set `TELEGRAM_DM_ALLOW_FROM` as a secret (comma-separated user IDs). Manual edits inside the container are ephemeral unless persisted via R2.
 
 **CDP/browser skill returns `Unauthorized` or HTML login page:** Ensure your Cloudflare Access policy does not protect `/cdp/*` at the edge. The worker handles `/cdp/*` auth via `CDP_SECRET`, not CF Access JWT.
 

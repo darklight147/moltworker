@@ -280,15 +280,24 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
 // that would fail OpenClaw's strict config validation (see #47)
 if (process.env.TELEGRAM_BOT_TOKEN) {
     const dmPolicy = process.env.TELEGRAM_DM_POLICY || 'pairing';
+    const existingTelegram = config.channels.telegram || {};
     config.channels.telegram = {
         botToken: process.env.TELEGRAM_BOT_TOKEN,
         enabled: true,
         dmPolicy: dmPolicy,
     };
     if (process.env.TELEGRAM_DM_ALLOW_FROM) {
-        config.channels.telegram.allowFrom = process.env.TELEGRAM_DM_ALLOW_FROM.split(',');
+        const allowFrom = process.env.TELEGRAM_DM_ALLOW_FROM.split(',')
+            .map((id) => id.trim())
+            .filter(Boolean);
+        if (allowFrom.length > 0) {
+            config.channels.telegram.allowFrom = allowFrom;
+        }
     } else if (dmPolicy === 'open') {
         config.channels.telegram.allowFrom = ['*'];
+    } else if (Array.isArray(existingTelegram.allowFrom) && existingTelegram.allowFrom.length > 0) {
+        // Preserve existing allow list when no explicit env override is set.
+        config.channels.telegram.allowFrom = existingTelegram.allowFrom;
     }
 }
 
