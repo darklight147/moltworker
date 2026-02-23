@@ -188,11 +188,13 @@ cdp.get('/', async (c) => {
   // Accept the WebSocket
   server.accept();
 
-  // Initialize CDP session asynchronously
-  initCDPSession(server, c.env).catch((err) => {
-    console.error('[CDP] Failed to initialize session:', err);
-    server.close(1011, 'Failed to initialize browser session');
-  });
+  // Initialize CDP session in the execution context so the fetch can complete immediately.
+  c.executionCtx.waitUntil(
+    initCDPSession(server, c.env).catch((err) => {
+      console.error('[CDP] Failed to initialize session:', err);
+      server.close(1011, 'Failed to initialize browser session');
+    }),
+  );
 
   return new Response(null, {
     status: 101,
@@ -247,10 +249,12 @@ cdp.get('/devtools/browser/:id', async (c) => {
   const [client, server] = Object.values(webSocketPair);
   server.accept();
 
-  initCDPSession(server, c.env).catch((err) => {
-    console.error('[CDP] Failed to initialize session:', err);
-    server.close(1011, 'Failed to initialize browser session');
-  });
+  c.executionCtx.waitUntil(
+    initCDPSession(server, c.env).catch((err) => {
+      console.error('[CDP] Failed to initialize session:', err);
+      server.close(1011, 'Failed to initialize browser session');
+    }),
+  );
 
   return new Response(null, {
     status: 101,
