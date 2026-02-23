@@ -251,6 +251,52 @@ cdp.get('/json/version', async (c) => {
 });
 
 /**
+ * GET /json/version/* - Compatibility alias for clients that append a scope
+ * (e.g. /json/version/chat).
+ */
+cdp.get('/json/version/*', async (c) => {
+  const url = new URL(c.req.url);
+  const providedSecret = url.searchParams.get('secret');
+  const expectedSecret = c.env.CDP_SECRET;
+
+  if (!expectedSecret) {
+    return c.json(
+      {
+        error: 'CDP endpoint not configured',
+        hint: 'Set CDP_SECRET via: wrangler secret put CDP_SECRET',
+      },
+      503,
+    );
+  }
+
+  if (!providedSecret || !timingSafeEqual(providedSecret, expectedSecret)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  if (!c.env.BROWSER) {
+    return c.json(
+      {
+        error: 'Browser Rendering not configured',
+        hint: 'Add browser binding to wrangler.jsonc',
+      },
+      503,
+    );
+  }
+
+  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
+
+  return c.json({
+    Browser: 'Cloudflare-Browser-Rendering/1.0',
+    'Protocol-Version': '1.3',
+    'User-Agent': 'Mozilla/5.0 Cloudflare Browser Rendering',
+    'V8-Version': 'cloudflare',
+    'WebKit-Version': 'cloudflare',
+    webSocketDebuggerUrl: wsUrl,
+  });
+});
+
+/**
  * GET /json/list - List available targets (tabs)
  *
  * Returns a list of available browser targets for Moltbot/Playwright compatibility.
@@ -293,6 +339,55 @@ cdp.get('/json/list', async (c) => {
   const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
 
   // Return a placeholder target - actual target is created on WS connect
+  return c.json([
+    {
+      description: '',
+      devtoolsFrontendUrl: '',
+      id: 'cloudflare-browser',
+      title: 'Cloudflare Browser Rendering',
+      type: 'page',
+      url: 'about:blank',
+      webSocketDebuggerUrl: wsUrl,
+    },
+  ]);
+});
+
+/**
+ * GET /json/list/* - Compatibility alias for clients that append a scope
+ * (e.g. /json/list/chat).
+ */
+cdp.get('/json/list/*', async (c) => {
+  const url = new URL(c.req.url);
+  const providedSecret = url.searchParams.get('secret');
+  const expectedSecret = c.env.CDP_SECRET;
+
+  if (!expectedSecret) {
+    return c.json(
+      {
+        error: 'CDP endpoint not configured',
+        hint: 'Set CDP_SECRET via: wrangler secret put CDP_SECRET',
+      },
+      503,
+    );
+  }
+
+  if (!providedSecret || !timingSafeEqual(providedSecret, expectedSecret)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  if (!c.env.BROWSER) {
+    return c.json(
+      {
+        error: 'Browser Rendering not configured',
+        hint: 'Add browser binding to wrangler.jsonc',
+      },
+      503,
+    );
+  }
+
+  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
+
   return c.json([
     {
       description: '',
