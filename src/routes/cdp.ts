@@ -188,13 +188,8 @@ cdp.get('/', async (c) => {
   // Accept the WebSocket
   server.accept();
 
-  // Initialize CDP session in the execution context so the fetch can complete immediately.
-  c.executionCtx.waitUntil(
-    initCDPSession(server, c.env).catch((err) => {
-      console.error('[CDP] Failed to initialize session:', err);
-      server.close(1011, 'Failed to initialize browser session');
-    }),
-  );
+  // Initialize handlers immediately; browser launch is lazy on first CDP message.
+  startCDPSession(server, c.env);
 
   return new Response(null, {
     status: 101,
@@ -249,12 +244,8 @@ cdp.get('/devtools/browser/:id', async (c) => {
   const [client, server] = Object.values(webSocketPair);
   server.accept();
 
-  c.executionCtx.waitUntil(
-    initCDPSession(server, c.env).catch((err) => {
-      console.error('[CDP] Failed to initialize session:', err);
-      server.close(1011, 'Failed to initialize browser session');
-    }),
-  );
+  // Initialize handlers immediately; browser launch is lazy on first CDP message.
+  startCDPSession(server, c.env);
 
   return new Response(null, {
     status: 101,
@@ -421,52 +412,59 @@ cdp.get('/json', async (c) => {
 /**
  * Initialize a CDP session for a WebSocket connection
  */
-async function initCDPSession(ws: WebSocket, env: MoltbotEnv): Promise<void> {
+function startCDPSession(ws: WebSocket, env: MoltbotEnv): void {
   let session: CDPSession | null = null;
+  let initPromise: Promise<void> | null = null;
 
-  try {
-    // Launch browser
-    // eslint-disable-next-line import/no-named-as-default-member -- puppeteer.launch() is the standard API
-    const browser = await puppeteer.launch(env.BROWSER!);
-    const page = await browser.newPage();
-    const targetId = crypto.randomUUID();
+  const ensureSessionInitialized = async (): Promise<void> => {
+    if (session) return;
 
-    session = {
-      browser,
-      pages: new Map([[targetId, page]]),
-      defaultTargetId: targetId,
-      nodeIdCounter: 1,
-      nodeMap: new Map(),
-      objectIdCounter: 1,
-      objectMap: new Map(),
-      scriptsToEvaluateOnNewDocument: new Map(),
-      extraHTTPHeaders: new Map(),
-      requestInterceptionEnabled: false,
-      pendingRequests: new Map(),
-    };
+    if (!initPromise) {
+      initPromise = (async () => {
+        try {
+          // eslint-disable-next-line import/no-named-as-default-member -- puppeteer.launch() is the standard API
+          const browser = await puppeteer.launch(env.BROWSER!);
+          const page = await browser.newPage();
+          const targetId = crypto.randomUUID();
 
-    // Send initial target created event
-    sendEvent(ws, 'Target.targetCreated', {
-      targetInfo: {
-        targetId,
-        type: 'page',
-        title: '',
-        url: 'about:blank',
-        attached: true,
-      },
-    });
+          session = {
+            browser,
+            pages: new Map([[targetId, page]]),
+            defaultTargetId: targetId,
+            nodeIdCounter: 1,
+            nodeMap: new Map(),
+            objectIdCounter: 1,
+            objectMap: new Map(),
+            scriptsToEvaluateOnNewDocument: new Map(),
+            extraHTTPHeaders: new Map(),
+            requestInterceptionEnabled: false,
+            pendingRequests: new Map(),
+          };
 
-    console.log('[CDP] Session initialized, targetId:', targetId);
-  } catch (err) {
-    console.error('[CDP] Browser launch failed:', err);
-    ws.close(1011, 'Browser launch failed');
-    return;
-  }
+          sendEvent(ws, 'Target.targetCreated', {
+            targetInfo: {
+              targetId,
+              type: 'page',
+              title: '',
+              url: 'about:blank',
+              attached: true,
+            },
+          });
+
+          console.log('[CDP] Session initialized, targetId:', targetId);
+        } catch (err) {
+          console.error('[CDP] Browser launch failed:', err);
+          ws.close(1011, 'Browser launch failed');
+          throw err;
+        }
+      })();
+    }
+
+    await initPromise;
+  };
 
   // Handle incoming messages
   ws.addEventListener('message', async (event) => {
-    if (!session) return;
-
     let request: CDPRequest;
     try {
       request = JSON.parse(event.data as string);
@@ -478,6 +476,10 @@ async function initCDPSession(ws: WebSocket, env: MoltbotEnv): Promise<void> {
     console.log('[CDP] Request:', request.method, request.params);
 
     try {
+      await ensureSessionInitialized();
+      if (!session) {
+        throw new Error('CDP session not initialized');
+      }
       const result = await handleCDPMethod(session, request.method, request.params || {}, ws);
       sendResponse(ws, request.id, result);
     } catch (err) {
