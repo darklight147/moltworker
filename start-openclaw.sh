@@ -186,6 +186,8 @@ if (process.env.WORKER_URL && process.env.CDP_SECRET) {
         workerUrl.searchParams.set('secret', process.env.CDP_SECRET);
 
         config.browser = config.browser || {};
+        config.browser.enabled = true;
+        config.browser.defaultProfile = 'cloudflare';
         config.browser.profiles = config.browser.profiles || {};
         config.browser.profiles.cloudflare = {
             ...(config.browser.profiles.cloudflare || {}),
