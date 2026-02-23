@@ -190,6 +190,9 @@ if (process.env.WORKER_URL && process.env.CDP_SECRET) {
         config.browser = config.browser || {};
         config.browser.enabled = true;
         config.browser.defaultProfile = 'cloudflare';
+        // Remote CDP checks can exceed default timeouts on worker cold starts.
+        config.browser.remoteCdpTimeoutMs = 10000;
+        config.browser.remoteCdpHandshakeTimeoutMs = 15000;
         config.browser.profiles = config.browser.profiles || {};
         config.browser.profiles.cloudflare = {
             ...(config.browser.profiles.cloudflare || {}),
