@@ -201,6 +201,64 @@ cdp.get('/', async (c) => {
 });
 
 /**
+ * GET /cdp/devtools/browser/:id - DevTools-compatible WebSocket endpoint
+ *
+ * Some clients expect Chrome-style WebSocket paths returned by /json/version.
+ * We ignore :id and create an isolated session per WebSocket connection.
+ */
+cdp.get('/devtools/browser/:id', async (c) => {
+  const upgradeHeader = c.req.header('Upgrade');
+  if (upgradeHeader?.toLowerCase() !== 'websocket') {
+    return c.json({
+      error: 'WebSocket upgrade required',
+      hint: 'Connect via WebSocket: ws://host/cdp/devtools/browser/{id}?secret=<CDP_SECRET>',
+    });
+  }
+
+  const url = new URL(c.req.url);
+  const providedSecret = url.searchParams.get('secret');
+  const expectedSecret = c.env.CDP_SECRET;
+
+  if (!expectedSecret) {
+    return c.json(
+      {
+        error: 'CDP endpoint not configured',
+        hint: 'Set CDP_SECRET via: wrangler secret put CDP_SECRET',
+      },
+      503,
+    );
+  }
+
+  if (!providedSecret || !timingSafeEqual(providedSecret, expectedSecret)) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  if (!c.env.BROWSER) {
+    return c.json(
+      {
+        error: 'Browser Rendering not configured',
+        hint: 'Add browser binding to wrangler.jsonc',
+      },
+      503,
+    );
+  }
+
+  const webSocketPair = new WebSocketPair();
+  const [client, server] = Object.values(webSocketPair);
+  server.accept();
+
+  initCDPSession(server, c.env).catch((err) => {
+    console.error('[CDP] Failed to initialize session:', err);
+    server.close(1011, 'Failed to initialize browser session');
+  });
+
+  return new Response(null, {
+    status: 101,
+    webSocket: client,
+  });
+});
+
+/**
  * GET /json/version - CDP discovery endpoint
  *
  * Returns browser version info and WebSocket URL for Moltbot/Playwright compatibility.
@@ -237,54 +295,7 @@ cdp.get('/json/version', async (c) => {
   }
 
   // Build the WebSocket URL - preserve the secret in the WS URL
-  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
-
-  return c.json({
-    Browser: 'Cloudflare-Browser-Rendering/1.0',
-    'Protocol-Version': '1.3',
-    'User-Agent': 'Mozilla/5.0 Cloudflare Browser Rendering',
-    'V8-Version': 'cloudflare',
-    'WebKit-Version': 'cloudflare',
-    webSocketDebuggerUrl: wsUrl,
-  });
-});
-
-/**
- * GET /json/version/* - Compatibility alias for clients that append a scope
- * (e.g. /json/version/chat).
- */
-cdp.get('/json/version/*', async (c) => {
-  const url = new URL(c.req.url);
-  const providedSecret = url.searchParams.get('secret');
-  const expectedSecret = c.env.CDP_SECRET;
-
-  if (!expectedSecret) {
-    return c.json(
-      {
-        error: 'CDP endpoint not configured',
-        hint: 'Set CDP_SECRET via: wrangler secret put CDP_SECRET',
-      },
-      503,
-    );
-  }
-
-  if (!providedSecret || !timingSafeEqual(providedSecret, expectedSecret)) {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
-
-  if (!c.env.BROWSER) {
-    return c.json(
-      {
-        error: 'Browser Rendering not configured',
-        hint: 'Add browser binding to wrangler.jsonc',
-      },
-      503,
-    );
-  }
-
-  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
+  const wsUrl = buildWebSocketDebuggerUrl(url, providedSecret);
 
   return c.json({
     Browser: 'Cloudflare-Browser-Rendering/1.0',
@@ -335,59 +346,9 @@ cdp.get('/json/list', async (c) => {
   }
 
   // Build the WebSocket URL
-  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
+  const wsUrl = buildWebSocketDebuggerUrl(url, providedSecret);
 
   // Return a placeholder target - actual target is created on WS connect
-  return c.json([
-    {
-      description: '',
-      devtoolsFrontendUrl: '',
-      id: 'cloudflare-browser',
-      title: 'Cloudflare Browser Rendering',
-      type: 'page',
-      url: 'about:blank',
-      webSocketDebuggerUrl: wsUrl,
-    },
-  ]);
-});
-
-/**
- * GET /json/list/* - Compatibility alias for clients that append a scope
- * (e.g. /json/list/chat).
- */
-cdp.get('/json/list/*', async (c) => {
-  const url = new URL(c.req.url);
-  const providedSecret = url.searchParams.get('secret');
-  const expectedSecret = c.env.CDP_SECRET;
-
-  if (!expectedSecret) {
-    return c.json(
-      {
-        error: 'CDP endpoint not configured',
-        hint: 'Set CDP_SECRET via: wrangler secret put CDP_SECRET',
-      },
-      503,
-    );
-  }
-
-  if (!providedSecret || !timingSafeEqual(providedSecret, expectedSecret)) {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
-
-  if (!c.env.BROWSER) {
-    return c.json(
-      {
-        error: 'Browser Rendering not configured',
-        hint: 'Add browser binding to wrangler.jsonc',
-      },
-      503,
-    );
-  }
-
-  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
-
   return c.json([
     {
       description: '',
@@ -438,8 +399,7 @@ cdp.get('/json', async (c) => {
   }
 
   // Build the WebSocket URL
-  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProtocol}//${url.host}/cdp?secret=${encodeURIComponent(providedSecret)}`;
+  const wsUrl = buildWebSocketDebuggerUrl(url, providedSecret);
 
   return c.json([
     {
@@ -1994,6 +1954,16 @@ function sendError(ws: WebSocket, id: number, code: number, message: string): vo
 function sendEvent(ws: WebSocket, method: string, params?: Record<string, unknown>): void {
   const event: CDPEvent = { method, params };
   ws.send(JSON.stringify(event));
+}
+
+/**
+ * Build a Chrome DevTools-compatible WebSocket URL for discovery endpoints.
+ */
+function buildWebSocketDebuggerUrl(url: URL, providedSecret: string): string {
+  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${wsProtocol}//${url.host}/cdp/devtools/browser/cloudflare-browser?secret=${encodeURIComponent(
+    providedSecret,
+  )}`;
 }
 
 /**
