@@ -301,6 +301,24 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
 
         if (baseUrl && apiKey && api) {
             const providerName = 'cf-ai-gw-' + gwProvider;
+            const models = [
+                { id: providerModelId, name: providerModelId, contextWindow: 131072, maxTokens: 8192 },
+            ];
+
+            // For Workers AI, include gpt-oss-120b as an additional runtime-selectable model.
+            if (gwProvider === 'workers-ai') {
+                const gptOssBaseId = '@cf/openai/gpt-oss-120b';
+                const gptOssModelId =
+                    accountId && gatewayId ? 'workers-ai/' + gptOssBaseId : gptOssBaseId;
+                if (!models.some((m) => m.id === gptOssModelId)) {
+                    models.push({
+                        id: gptOssModelId,
+                        name: gptOssModelId,
+                        contextWindow: 131072,
+                        maxTokens: 8192,
+                    });
+                }
+            }
 
             config.models = config.models || {};
             config.models.providers = config.models.providers || {};
@@ -308,7 +326,7 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
                 baseUrl: baseUrl,
                 apiKey: apiKey,
                 api: api,
-                models: [{ id: providerModelId, name: providerModelId, contextWindow: 131072, maxTokens: 8192 }],
+                models: models,
             };
             config.agents = config.agents || {};
             config.agents.defaults = config.agents.defaults || {};
