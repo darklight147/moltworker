@@ -65,6 +65,8 @@ interface CDPSession {
   extraHTTPHeaders: Map<string, string>; // header name -> value
   requestInterceptionEnabled: boolean;
   pendingRequests: Map<string, { request: Request; resolve: (response: Response) => void }>;
+  executionContextCounter: number;
+  executionContexts: Map<string, number>; // `${frameId}:${worldName}` -> executionContextId
 }
 
 /**
@@ -99,6 +101,7 @@ cdp.get('/', async (c) => {
         'Page.printToPDF',
         'Page.addScriptToEvaluateOnNewDocument',
         'Page.removeScriptToEvaluateOnNewDocument',
+        'Page.createIsolatedWorld',
         'Page.handleJavaScriptDialog',
         'Page.stopLoading',
         'Page.getNavigationHistory',
@@ -451,6 +454,8 @@ function startCDPSession(ws: WebSocket, env: MoltbotEnv): void {
             extraHTTPHeaders: new Map(),
             requestInterceptionEnabled: false,
             pendingRequests: new Map(),
+            executionContextCounter: 1,
+            executionContexts: new Map(),
           };
 
           sendEvent(ws, 'Target.targetCreated', {
@@ -926,6 +931,40 @@ async function handlePage(
       session.scriptsToEvaluateOnNewDocument.delete(identifier);
       // Note: Can't actually remove already-added scripts in Puppeteer
       return {};
+    }
+
+    case 'createIsolatedWorld': {
+      const frameId = (params.frameId as string) || session.defaultTargetId;
+      const worldName = (params.worldName as string) || '__playwright_utility_world__';
+      const contextKey = `${frameId}:${worldName}`;
+
+      let executionContextId = session.executionContexts.get(contextKey);
+      if (!executionContextId) {
+        executionContextId = session.executionContextCounter++;
+        session.executionContexts.set(contextKey, executionContextId);
+
+        let origin = '';
+        try {
+          origin = page.url() ? new URL(page.url()).origin : '';
+        } catch {
+          origin = '';
+        }
+
+        sendEvent(ws, 'Runtime.executionContextCreated', {
+          context: {
+            id: executionContextId,
+            origin,
+            name: worldName,
+            auxData: {
+              frameId,
+              type: 'isolated',
+              isDefault: false,
+            },
+          },
+        });
+      }
+
+      return { executionContextId };
     }
 
     case 'handleJavaScriptDialog': {
