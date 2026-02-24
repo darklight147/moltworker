@@ -1916,19 +1916,23 @@ async function handleEmulation(
       }
 
       if (features) {
-        // Puppeteer supports only a subset of media features; ignore unsupported ones.
-        const supportedFeatureNames = new Set([
-          'prefers-color-scheme',
-          'prefers-reduced-motion',
-          'prefers-contrast',
-          'color-gamut',
-        ]);
+        // Cloudflare Browser Rendering supports a small feature subset.
+        // Playwright may send unsupported features (e.g. forced-colors, prefers-contrast).
+        // Keep only known-safe features and ignore failures.
+        const supportedFeatureNames = new Set(['prefers-color-scheme', 'prefers-reduced-motion']);
         const supportedFeatures = features
           .filter((f) => supportedFeatureNames.has(f.name))
           .map((f) => ({ name: f.name, value: f.value }));
 
         if (supportedFeatures.length > 0) {
-          await page.emulateMediaFeatures(supportedFeatures);
+          try {
+            await page.emulateMediaFeatures(supportedFeatures);
+          } catch (err) {
+            console.warn(
+              '[CDP] Ignoring emulateMediaFeatures failure:',
+              err instanceof Error ? err.message : String(err),
+            );
+          }
         }
       }
 
