@@ -89,6 +89,7 @@ cdp.get('/', async (c) => {
         'Target.createTarget',
         'Target.closeTarget',
         'Target.getTargets',
+        'Target.getTargetInfo',
         'Target.attachToTarget',
         // Page
         'Page.navigate',
@@ -102,6 +103,7 @@ cdp.get('/', async (c) => {
         'Page.addScriptToEvaluateOnNewDocument',
         'Page.removeScriptToEvaluateOnNewDocument',
         'Page.createIsolatedWorld',
+        'Page.setLifecycleEventsEnabled',
         'Page.handleJavaScriptDialog',
         'Page.stopLoading',
         'Page.getNavigationHistory',
@@ -109,10 +111,13 @@ cdp.get('/', async (c) => {
         'Page.setBypassCSP',
         // Runtime
         'Runtime.evaluate',
+        'Runtime.runIfWaitingForDebugger',
         'Runtime.callFunctionOn',
         'Runtime.getProperties',
         'Runtime.releaseObject',
         'Runtime.releaseObjectGroup',
+        // Log
+        'Log.enable',
         // DOM
         'DOM.getDocument',
         'DOM.querySelector',
@@ -157,6 +162,7 @@ cdp.get('/', async (c) => {
         'Emulation.setTimezoneOverride',
         'Emulation.setTouchEmulationEnabled',
         'Emulation.setEmulatedMedia',
+        'Emulation.setFocusEmulationEnabled',
         'Emulation.setDefaultBackgroundColorOverride',
       ],
     });
@@ -588,6 +594,9 @@ async function handleCDPMethod(
       if (!page) throw new Error(`Target not found: ${targetId}`);
       return handleFetch(session, page, command, params, ws);
 
+    case 'Log':
+      return handleLog(command);
+
     default:
       throw new Error(`Unknown domain: ${domain}`);
   }
@@ -707,6 +716,24 @@ async function handleTarget(
         });
       }
       return { targetInfos: targets };
+    }
+
+    case 'getTargetInfo': {
+      const targetId = (params.targetId as string) || session.defaultTargetId;
+      const page = session.pages.get(targetId);
+      if (!page) {
+        throw new Error(`Target not found: ${targetId}`);
+      }
+      return {
+        targetInfo: {
+          targetId,
+          type: 'page',
+          title: await page.title(),
+          url: page.url(),
+          browserContextId: session.browserContextId,
+          attached: true,
+        },
+      };
     }
 
     case 'attachToTarget': {
@@ -914,14 +941,16 @@ async function handlePage(
     }
 
     case 'addScriptToEvaluateOnNewDocument': {
-      const source = params.source as string;
-      if (!source) throw new Error('source is required');
+      const source = typeof params.source === 'string' ? params.source : '';
 
       const identifier = crypto.randomUUID();
       session.scriptsToEvaluateOnNewDocument.set(identifier, source);
 
-      // Add to the page via evaluateOnNewDocument
-      await page.evaluateOnNewDocument(source);
+      // Playwright may register an empty utility world script.
+      // Keep it as a valid no-op instead of failing initialization.
+      if (source.length > 0) {
+        await page.evaluateOnNewDocument(source);
+      }
 
       return { identifier };
     }
@@ -1021,6 +1050,10 @@ async function handlePage(
       await page.setBypassCSP(enabled);
       return {};
     }
+
+    case 'setLifecycleEventsEnabled':
+      // No-op: lifecycle events are emitted from navigation handlers.
+      return {};
 
     case 'enable':
     case 'disable':
@@ -1181,6 +1214,10 @@ async function handleRuntime(
       session.objectMap.clear();
       return {};
     }
+
+    case 'runIfWaitingForDebugger':
+      // No-op: we never pause on debugger during CDP init.
+      return {};
 
     case 'enable':
     case 'disable':
@@ -1861,11 +1898,28 @@ async function handleEmulation(
       }
 
       if (features) {
-        await page.emulateMediaFeatures(features.map((f) => ({ name: f.name, value: f.value })));
+        // Puppeteer supports only a subset of media features; ignore unsupported ones.
+        const supportedFeatureNames = new Set([
+          'prefers-color-scheme',
+          'prefers-reduced-motion',
+          'prefers-contrast',
+          'color-gamut',
+        ]);
+        const supportedFeatures = features
+          .filter((f) => supportedFeatureNames.has(f.name))
+          .map((f) => ({ name: f.name, value: f.value }));
+
+        if (supportedFeatures.length > 0) {
+          await page.emulateMediaFeatures(supportedFeatures);
+        }
       }
 
       return {};
     }
+
+    case 'setFocusEmulationEnabled':
+      // No-op: focus is handled by the browser/page naturally.
+      return {};
 
     case 'setDefaultBackgroundColorOverride': {
       const color = params.color as { r: number; g: number; b: number; a?: number } | undefined;
@@ -1882,6 +1936,20 @@ async function handleEmulation(
 
     default:
       throw new Error(`Unknown Emulation method: ${command}`);
+  }
+}
+
+/**
+ * Log domain handlers
+ */
+function handleLog(command: string): unknown {
+  switch (command) {
+    case 'enable':
+    case 'disable':
+    case 'clear':
+      return {};
+    default:
+      throw new Error(`Unknown Log method: ${command}`);
   }
 }
 
