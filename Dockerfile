@@ -20,10 +20,14 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # Install pnpm globally
 RUN npm install -g pnpm
 
-# Install OpenClaw (formerly clawdbot/moltbot)
-# Pin to specific version for reproducible builds
-RUN npm install -g openclaw@2026.2.3 \
-    && openclaw --version
+# Install OpenClaw (formerly clawdbot/moltbot) and ws for generated Node scripts.
+# Pin versions for reproducible builds.
+RUN npm install -g openclaw@2026.2.3 ws@8.18.0 \
+    && openclaw --version \
+    && node -e "require('/usr/local/lib/node_modules/ws/lib/websocket.js'); console.log('ws installed')"
+
+# Allow plain `require('ws')` from arbitrary workspace scripts.
+ENV NODE_PATH=/usr/local/lib/node_modules
 
 # Create OpenClaw directories
 # Legacy .clawdbot paths are kept for R2 backup migration
@@ -34,7 +38,7 @@ RUN mkdir -p /root/.openclaw \
     && mkdir -p /root/clawd/docs/reference/templates
 
 # Copy startup script
-# Build cache bust: 2026-02-24-v32-skip-runtime-openclaw-install
+# Build cache bust: 2026-02-24-v33-add-global-ws
 COPY start-openclaw.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
 
