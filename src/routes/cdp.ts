@@ -767,17 +767,26 @@ async function handleTarget(
     }
 
     case 'setAutoAttach': {
+      const wasAutoAttach = session.autoAttach;
       session.autoAttach = Boolean(params.autoAttach);
       session.flattenAutoAttach = Boolean(params.flatten);
+      const waitForDebugger = Boolean(params.waitForDebuggerOnStart);
 
       if (session.autoAttach) {
         // Emit attached events for existing targets for Playwright compatibility.
         for (const [targetId] of session.pages) {
-          const sessionId = session.flattenAutoAttach
-            ? targetId
-            : session.targetSessionIds.get(targetId) || crypto.randomUUID();
-          session.targetSessionIds.set(targetId, sessionId);
-          session.sessionTargetIds.set(sessionId, targetId);
+          let sessionId = session.targetSessionIds.get(targetId);
+          if (!sessionId) {
+            sessionId = session.flattenAutoAttach ? targetId : crypto.randomUUID();
+            session.targetSessionIds.set(targetId, sessionId);
+            session.sessionTargetIds.set(sessionId, targetId);
+          }
+
+          // Avoid duplicate attach events when Playwright sends setAutoAttach repeatedly.
+          if (wasAutoAttach) {
+            continue;
+          }
+
           sendEvent(ws, 'Target.attachedToTarget', {
             sessionId,
             targetInfo: {
@@ -788,7 +797,7 @@ async function handleTarget(
               browserContextId: session.browserContextId,
               attached: true,
             },
-            waitingForDebugger: false,
+            waitingForDebugger: waitForDebugger,
           });
         }
       }
