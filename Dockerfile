@@ -29,12 +29,18 @@ RUN npm install -g openclaw@2026.2.3 \
 # Legacy .clawdbot paths are kept for R2 backup migration
 RUN mkdir -p /root/.openclaw \
     && mkdir -p /root/clawd \
-    && mkdir -p /root/clawd/skills
+    && mkdir -p /root/clawd/skills \
+    && mkdir -p /workspace/docs/reference/templates \
+    && mkdir -p /root/clawd/docs/reference/templates
 
 # Copy startup script
 # Build cache bust: 2026-02-23-v31-browser-cdp-trailing-slash
 COPY start-openclaw.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
+
+# Package workspace templates expected by OpenClaw bootstrap/runtime.
+COPY docs/reference/templates/ /workspace/docs/reference/templates/
+COPY docs/reference/templates/ /root/clawd/docs/reference/templates/
 
 # Copy custom skills
 COPY skills/ /root/clawd/skills/
