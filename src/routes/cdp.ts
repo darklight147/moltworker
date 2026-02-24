@@ -83,6 +83,7 @@ interface CDPSession {
   pendingRequests: Map<string, { request: Request; resolve: (response: Response) => void }>;
   executionContextCounter: number;
   executionContexts: Map<string, number>; // `${frameId}:${worldName}` -> executionContextId
+  lifecycleEventsEnabled: boolean;
 }
 
 /**
@@ -478,6 +479,7 @@ function startCDPSession(ws: WebSocket, env: MoltbotEnv): void {
             pendingRequests: new Map(),
             executionContextCounter: 1,
             executionContexts: new Map(),
+            lifecycleEventsEnabled: false,
           };
 
           sendEvent(ws, 'Target.targetCreated', {
@@ -825,6 +827,11 @@ async function handlePage(
       const url = params.url as string;
       if (!url) throw new Error('url is required');
 
+      const loaderId = crypto.randomUUID();
+      sendEvent(ws, 'Page.frameStartedLoading', {
+        frameId: session.defaultTargetId,
+      });
+
       const response = await page.goto(url, {
         waitUntil: 'load',
       });
@@ -838,13 +845,46 @@ async function handlePage(
         },
       });
 
+      const timestamp = Date.now() / 1000;
+      if (session.lifecycleEventsEnabled) {
+        sendEvent(ws, 'Page.lifecycleEvent', {
+          frameId: session.defaultTargetId,
+          loaderId,
+          name: 'init',
+          timestamp,
+        });
+        sendEvent(ws, 'Page.lifecycleEvent', {
+          frameId: session.defaultTargetId,
+          loaderId,
+          name: 'DOMContentLoaded',
+          timestamp,
+        });
+      }
+
+      sendEvent(ws, 'Page.domContentEventFired', {
+        timestamp,
+      });
+
       sendEvent(ws, 'Page.loadEventFired', {
-        timestamp: Date.now() / 1000,
+        timestamp,
+      });
+
+      if (session.lifecycleEventsEnabled) {
+        sendEvent(ws, 'Page.lifecycleEvent', {
+          frameId: session.defaultTargetId,
+          loaderId,
+          name: 'load',
+          timestamp,
+        });
+      }
+
+      sendEvent(ws, 'Page.frameStoppedLoading', {
+        frameId: session.defaultTargetId,
       });
 
       return {
         frameId: session.defaultTargetId,
-        loaderId: crypto.randomUUID(),
+        loaderId,
         errorText: response?.ok() ? undefined : 'Navigation failed',
       };
     }
@@ -1079,7 +1119,7 @@ async function handlePage(
     }
 
     case 'setLifecycleEventsEnabled':
-      // No-op: lifecycle events are emitted from navigation handlers.
+      session.lifecycleEventsEnabled = Boolean(params.enabled);
       return {};
 
     case 'enable':
