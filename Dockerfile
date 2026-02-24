@@ -38,13 +38,19 @@ RUN mkdir -p /root/.openclaw \
     && mkdir -p /root/clawd/docs/reference/templates
 
 # Copy startup script
-# Build cache bust: 2026-02-24-v33-add-global-ws
+# Build cache bust: 2026-02-24-v34-template-primary-sync
 COPY start-openclaw.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
 
 # Package workspace templates expected by OpenClaw bootstrap/runtime.
 COPY docs/reference/templates/ /workspace/docs/reference/templates/
 COPY docs/reference/templates/ /root/clawd/docs/reference/templates/
+RUN if [ -d /usr/local/lib/node_modules/openclaw/docs/reference/templates ]; then \
+      cp -f /workspace/docs/reference/templates/*.md /usr/local/lib/node_modules/openclaw/docs/reference/templates/; \
+    fi \
+    && if [ -d /usr/local/lib/node_modules/openclaw/dist/docs/reference/templates ]; then \
+      cp -f /workspace/docs/reference/templates/*.md /usr/local/lib/node_modules/openclaw/dist/docs/reference/templates/; \
+    fi
 
 # Copy custom skills
 COPY skills/ /root/clawd/skills/

@@ -52,6 +52,7 @@ EOF
 }
 
 RCLONE_FLAGS="--transfers=16 --fast-list --s3-no-check-bucket"
+TEMPLATE_SRC="/workspace/docs/reference/templates"
 
 # OpenClaw is installed in the image at build time.
 # Do not reinstall at runtime; it can take >3 minutes and cause startup timeouts.
@@ -62,6 +63,36 @@ else
     npm install -g openclaw@2026.2.3
     openclaw --version
 fi
+
+sync_workspace_templates() {
+    if [ ! -d "$TEMPLATE_SRC" ]; then
+        echo "No custom templates source found at $TEMPLATE_SRC"
+        return
+    fi
+
+    if ! ls "$TEMPLATE_SRC"/*.md >/dev/null 2>&1; then
+        echo "No custom template markdown files found in $TEMPLATE_SRC"
+        return
+    fi
+
+    OPENCLAW_NPM_ROOT="$(npm root -g 2>/dev/null || true)"
+    TARGET_DIRS=(
+        "$OPENCLAW_NPM_ROOT/openclaw/docs/reference/templates"
+        "$OPENCLAW_NPM_ROOT/openclaw/dist/docs/reference/templates"
+        "/usr/local/lib/node_modules/openclaw/docs/reference/templates"
+        "/usr/local/lib/node_modules/openclaw/dist/docs/reference/templates"
+        "/root/clawd/docs/reference/templates"
+    )
+
+    for target in "${TARGET_DIRS[@]}"; do
+        if [ -d "$target" ]; then
+            cp -f "$TEMPLATE_SRC"/*.md "$target"/
+            echo "Synced custom templates to: $target"
+        fi
+    done
+}
+
+sync_workspace_templates
 
 # ============================================================
 # RESTORE FROM R2
