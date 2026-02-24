@@ -45,6 +45,22 @@ interface CDPEvent {
   params?: Record<string, unknown>;
 }
 
+function toBase64String(data: unknown): string {
+  if (typeof data === 'string') {
+    return data;
+  }
+
+  if (data instanceof Uint8Array) {
+    return Buffer.from(data).toString('base64');
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(new Uint8Array(data)).toString('base64');
+  }
+
+  throw new Error(`Unsupported binary payload type: ${typeof data}`);
+}
+
 /**
  * Session state for a CDP connection
  */
@@ -851,7 +867,7 @@ async function handlePage(
         | { x: number; y: number; width: number; height: number }
         | undefined;
 
-      const data = await page.screenshot({
+      const rawData = await page.screenshot({
         type: format as 'png' | 'jpeg' | 'webp',
         encoding: 'base64',
         quality: format === 'jpeg' ? quality : undefined,
@@ -859,6 +875,8 @@ async function handlePage(
         fullPage: params.fullPage as boolean | undefined,
       });
 
+      const data = toBase64String(rawData);
+      console.log('[CDP] captureScreenshot ok format=%s bytes(base64)=%d', format, data.length);
       return { data };
     }
 
