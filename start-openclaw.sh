@@ -262,17 +262,6 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
 
         if (baseUrl && apiKey && api) {
             const providerName = 'cf-ai-gw-' + gwProvider;
-            const modelConfig = {
-                id: providerModelId,
-                name: providerModelId,
-                contextWindow: 131072,
-                maxTokens: 8192,
-            };
-            // OpenAI-compatible backends can fail tool calling when streaming is on.
-            // Disable streaming for this provider path to keep tool calls structured.
-            if (api === 'openai-completions') {
-                modelConfig.params = { streaming: false };
-            }
 
             config.models = config.models || {};
             config.models.providers = config.models.providers || {};
@@ -280,7 +269,7 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
                 baseUrl: baseUrl,
                 apiKey: apiKey,
                 api: api,
-                models: [modelConfig],
+                models: [{ id: providerModelId, name: providerModelId, contextWindow: 131072, maxTokens: 8192 }],
             };
             config.agents = config.agents || {};
             config.agents.defaults = config.agents.defaults || {};
