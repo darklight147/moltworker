@@ -21,7 +21,7 @@
  */
 
 import { Hono } from 'hono';
-import { getSandbox, Sandbox, type SandboxOptions } from '@cloudflare/sandbox';
+import { getSandbox, Sandbox, type Process, type SandboxOptions } from '@cloudflare/sandbox';
 
 import type { AppEnv, MoltbotEnv } from './types';
 import { MOLTBOT_PORT } from './config';
@@ -114,6 +114,27 @@ function buildSandboxOptions(env: MoltbotEnv): SandboxOptions {
   return { sleepAfter };
 }
 
+function getMoltbotSandbox(env: MoltbotEnv): Sandbox {
+  return getSandbox(env.Sandbox, 'moltbot', buildSandboxOptions(env));
+}
+
+/**
+ * Determine gateway readiness from actual port reachability instead of process status alone.
+ * Process status can lag behind reality during startup/restarts.
+ */
+async function isGatewayReady(process: Process | null): Promise<boolean> {
+  if (!process) {
+    return false;
+  }
+
+  try {
+    await process.waitForPort(MOLTBOT_PORT, { mode: 'tcp', timeout: 2000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Main app
 const app = new Hono<AppEnv>();
 
@@ -134,8 +155,7 @@ app.use('*', async (c, next) => {
 
 // Middleware: Initialize sandbox for all requests
 app.use('*', async (c, next) => {
-  const options = buildSandboxOptions(c.env);
-  const sandbox = getSandbox(c.env.Sandbox, 'moltbot', options);
+  const sandbox = getMoltbotSandbox(c.env);
   c.set('sandbox', sandbox);
   await next();
 });
@@ -235,13 +255,13 @@ app.all('*', async (c) => {
 
   // Check if gateway is already running
   const existingProcess = await findExistingMoltbotProcess(sandbox);
-  const isGatewayReady = existingProcess !== null && existingProcess.status === 'running';
+  const gatewayReady = await isGatewayReady(existingProcess);
 
   // For browser requests (non-WebSocket, non-API), show loading page if gateway isn't ready
   const isWebSocketRequest = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
   const acceptsHtml = request.headers.get('Accept')?.includes('text/html');
 
-  if (!isGatewayReady && !isWebSocketRequest && acceptsHtml) {
+  if (!gatewayReady && !isWebSocketRequest && acceptsHtml) {
     console.log('[PROXY] Gateway not ready, serving loading page');
 
     // Start the gateway in the background (don't await)
@@ -446,4 +466,31 @@ app.all('*', async (c) => {
 
 export default {
   fetch: app.fetch,
+  async scheduled(
+    controller: { cron: string; scheduledTime: number },
+    env: MoltbotEnv,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(
+      (async () => {
+        const sandbox = getMoltbotSandbox(env);
+        console.log('[CRON] Keepalive tick:', controller.cron, controller.scheduledTime);
+
+        try {
+          const existingProcess = await findExistingMoltbotProcess(sandbox);
+          const ready = await isGatewayReady(existingProcess);
+          if (ready) {
+            console.log('[CRON] Gateway already ready');
+            return;
+          }
+
+          console.log('[CRON] Gateway not ready, ensuring startup');
+          await ensureMoltbotGateway(sandbox, env);
+          console.log('[CRON] Gateway startup ensured');
+        } catch (error) {
+          console.error('[CRON] Keepalive failed:', error);
+        }
+      })(),
+    );
+  },
 };

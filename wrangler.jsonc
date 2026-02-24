@@ -49,6 +49,11 @@
       },
     ],
   },
+  // Keep the OpenClaw gateway warm for channel-first use cases (e.g. Telegram),
+  // so the instance can receive updates without manual URL wake-ups.
+  "triggers": {
+    "crons": ["*/5 * * * *"],
+  },
   "migrations": [
     {
       "new_sqlite_classes": ["Sandbox"],
