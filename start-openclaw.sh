@@ -53,7 +53,15 @@ EOF
 
 RCLONE_FLAGS="--transfers=16 --fast-list --s3-no-check-bucket"
 
-npm install -g openclaw@2026.2.3 && openclaw --version
+# OpenClaw is installed in the image at build time.
+# Do not reinstall at runtime; it can take >3 minutes and cause startup timeouts.
+if command -v openclaw >/dev/null 2>&1; then
+    openclaw --version
+else
+    echo "openclaw binary missing, installing fallback version..."
+    npm install -g openclaw@2026.2.3
+    openclaw --version
+fi
 
 # ============================================================
 # RESTORE FROM R2
