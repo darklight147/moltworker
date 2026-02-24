@@ -4,6 +4,8 @@ import { MOLTBOT_PORT, STARTUP_TIMEOUT_MS } from '../config';
 import { buildEnvVars } from './env';
 import { ensureRcloneConfig } from './r2';
 
+const STARTUP_COMMAND = '/usr/local/bin/start-openclaw.sh';
+
 /**
  * Find an existing OpenClaw gateway process
  *
@@ -39,6 +41,36 @@ export async function findExistingMoltbotProcess(sandbox: Sandbox): Promise<Proc
     console.log('Could not list processes:', e);
   }
   return null;
+}
+
+/**
+ * Kick off gateway startup without waiting for the port to become ready.
+ *
+ * Intended for quick background tasks (e.g. in waitUntil) where long waits cause
+ * invocation timeout warnings. Readiness is verified later by ensureMoltbotGateway().
+ */
+export async function kickstartMoltbotGateway(sandbox: Sandbox, env: MoltbotEnv): Promise<void> {
+  await ensureRcloneConfig(sandbox, env);
+
+  const existingProcess = await findExistingMoltbotProcess(sandbox);
+  if (existingProcess) {
+    console.log(
+      '[Gateway] Kickstart skipped, existing process:',
+      existingProcess.id,
+      'status:',
+      existingProcess.status,
+    );
+    return;
+  }
+
+  const envVars = buildEnvVars(env);
+  console.log('[Gateway] Kickstarting process with command:', STARTUP_COMMAND);
+  console.log('[Gateway] Environment vars being passed:', Object.keys(envVars));
+
+  const process = await sandbox.startProcess(STARTUP_COMMAND, {
+    env: Object.keys(envVars).length > 0 ? envVars : undefined,
+  });
+  console.log('[Gateway] Kickstarted process id:', process.id, 'status:', process.status);
 }
 
 /**
@@ -91,7 +123,7 @@ export async function ensureMoltbotGateway(sandbox: Sandbox, env: MoltbotEnv): P
   // Start a new OpenClaw gateway
   console.log('Starting new OpenClaw gateway...');
   const envVars = buildEnvVars(env);
-  const command = '/usr/local/bin/start-openclaw.sh';
+  const command = STARTUP_COMMAND;
 
   console.log('Starting process with command:', command);
   console.log('Environment vars being passed:', Object.keys(envVars));

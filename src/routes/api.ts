@@ -4,6 +4,7 @@ import { createAccessMiddleware } from '../auth';
 import {
   ensureMoltbotGateway,
   findExistingMoltbotProcess,
+  kickstartMoltbotGateway,
   syncToR2,
   waitForProcess,
 } from '../gateway';
@@ -277,7 +278,7 @@ adminApi.post('/gateway/restart', async (c) => {
     }
 
     // Start a new gateway in the background
-    const bootPromise = ensureMoltbotGateway(sandbox, c.env).catch((err) => {
+    const bootPromise = kickstartMoltbotGateway(sandbox, c.env).catch((err) => {
       console.error('Gateway restart failed:', err);
     });
     c.executionCtx.waitUntil(bootPromise);
